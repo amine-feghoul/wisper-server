@@ -6,29 +6,62 @@ import librosa
 import numpy as np
 import tensorflow as tf
 import time
-
+import scipy as sc
+import matplotlib.pyplot as plt
 import subprocess
+from scipy.signal import butter, filtfilt
 
-# Create your views here.
 
-new_model = tf.keras.models.load_model('./main/classifier.h5')
+# Define filter parameters
+cutoff_freq = 1000 # Hz
+sampling_rate = 22050 # Hz
+order = 10 # Order of the filter
 
-classes = ['car-horn','dog-bark']
+#adding model
+uncertanThreshHold = 0.6
+loudnessThresHold = 70
+new_model = tf.keras.models.load_model('./main/classifier.h5',compile=False)
+new_model.compile(loss="categorical_crossentropy",metrics=['accuracy'],optimizer="adam")
+
+#defining the classes 
+classes = ['car-horn','dog-bark','human voice']
+
+
+# declaring butterworth filter 
+
+# Normalize cutoff frequency
+normalized_cutoff_freq = cutoff_freq / (sampling_rate / 2)
+
+# Create a butterworth filter
+b, a = butter(order, normalized_cutoff_freq, btype='low', analog=False)
+
+
+
 def feature_extractor():
     file,sr =librosa.load("./audio/temp.wav")
-    mfccs = librosa.feature.mfcc(y=file, sr=sr, n_mfcc=40)
+    filtered_audio = filtfilt(b, a, file)
+    fft =  sc.fft.fft(filtered_audio)
+    magnitude = np.absolute(fft)
+    
+    if(np.max(magnitude) < loudnessThresHold):
+        return None
+    mfccs = librosa.feature.mfcc(y=filtered_audio, sr=sr, n_mfcc=40)
     mfccsscaled = np.mean(mfccs.T,axis=0)
     return mfccsscaled
 
-
 def get_class(model):
-    mfcc = feature_extractor()
-    mfcc = mfcc.reshape(1,-1)
-    pred = model.predict(mfcc)
-    result = classes[np.argmax(pred)]
-    print(result)
-    return result
-
+    mfcc = feature_extractor()  
+    if mfcc is not None:  
+        mfcc = mfcc.reshape(1,-1)
+        pred = model.predict(mfcc)
+        if(np.max(pred)<uncertanThreshHold):
+            return "not sure"
+        result = classes[np.argmax(pred)]
+        print(result)
+        print(pred)
+        return result
+    else :
+        return "silence"
 @api_view(['GET',"POST"])
 def predict(request):
     if request.method == "POST":
@@ -46,12 +79,8 @@ def predict(request):
             for chunk in up_file.chunks():
                 file.write(chunk)
             file.close()
-            os.system("y |ffmpeg -i  ./audio/temp.3gp ./audio/temp.wav")
-            # command = ["ffmpeg", "-i", "./audio/temp.3gp ./audio/temp.wav"]
-            # output,error  = subprocess.Popen(
-            #     command, universal_newlines=True,
-            #     stdout=subprocess.PIPE,  
-            #     stderr=subprocess.PIPE).communicate()
+            os.system("y |ffmpeg -i  ./audio/temp.3gp ./audio/temp.wav")        
+           
             result = get_class(new_model)
             os.remove("./audio/temp.wav")
             end_time = time.time()
