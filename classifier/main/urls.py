@@ -3,5 +3,6 @@ from django.urls import path, include
 
 
 urlpatterns = [
-    path('predict/',predict)
+    path('predict/',predict),
+    path('classifers/',getClassifers)
 ]
