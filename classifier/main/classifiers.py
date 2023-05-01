@@ -27,6 +27,24 @@ b, a = butter(order, normalized_cutoff_freq, btype='low', analog=False)
 
 
 
+class Classifer:
+    def __init__(self,model,feature_extract,uncertanThreshHold = 0):
+        self.model = model
+        self.feature_extractor = feature_extract
+        self.uncertanThreshHold = uncertanThreshHold
+    def prdict(self,classes):
+        mfcc = self.feature_extractor() 
+        if mfcc is not None:  
+            pred = self.model.predict(mfcc)
+            if(np.max(pred)<self.uncertanThreshHold):
+                return "not sure"
+            result = classes[np.argmax(pred)]
+            print(result)
+            print(pred)
+            return result 
+        return "silence" 
+
+
 
 
 def ann_feature_extractor():
@@ -39,9 +57,11 @@ def ann_feature_extractor():
         return None
     mfccs = librosa.feature.mfcc(y=filtered_audio, sr=sr, n_mfcc=40)
     mfccsscaled = np.mean(mfccs.T,axis=0)
-    return mfccsscaled
+    
+    
+    return mfccsscaled.reshape(1,-1)
 
-def cnn_feature_extractor(file):
+def cnn_feature_extractor():
     max_pad_len = 174
     audio, sample_rate = librosa.load("./audio/temp.wav")                  
 
@@ -49,30 +69,13 @@ def cnn_feature_extractor(file):
      
     pad_width = max_pad_len - mfccs_features.shape[1]
     if pad_width < 0 :
-        mfccs_aug = mfccs_aug[:,:174]
         mfccs_features = mfccs_features[:,:174]
     else:
         mfccs_features = np.pad(mfccs_features, pad_width=((0, 0), (0, pad_width)), mode='constant')
-        mfccs_aug= np.pad(mfccs_aug, pad_width=((0, 0), (0, pad_width)), mode='constant')
-    return mfccs_features
+    return mfccs_features.reshape(1,40,174,1)
 
-class Classifer:
-    def __init__(self,model,feature_extract,uncertanThreshHold = 0):
-        self.model = model
-        self.feature_extractor = feature_extract
-        self.uncertanThreshHold = uncertanThreshHold
-    def prdict(self,classes):
-        mfcc = self.feature_extractor() 
-        if mfcc is not None:  
-            mfcc = mfcc.reshape(1,-1)
-            pred = self.model.predict(mfcc)
-            if(np.max(pred)<self.uncertanThreshHold):
-                return "not sure"
-            result = classes[np.argmax(pred)]
-            print(result)
-            print(pred)
-            return result 
-        return "silence" 
+ 
+
 annModel = tf.keras.models.load_model('./main/classifier.h5',compile=False)
 annModel.compile(loss="categorical_crossentropy",metrics=['accuracy'],optimizer="adam")
 ANN = Classifer(model=annModel,feature_extract=ann_feature_extractor,uncertanThreshHold=0.6)
